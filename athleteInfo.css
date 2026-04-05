@@ -1,0 +1,28 @@
+hr {border:1px solid #000;margin:10px 0 30px;width:100%;}
+
+/** overrides **/
+.wrapper div {font-size:16px;}
+.wrapper .slds-grid>div {margin:10px 20px 25px;padding:10px;}
+.inputwrapper_2 {width:45% !important;}
+.inputwrapper_3 {width:30% !important;}
+
+
+.ErrorBox {margin:10px;padding:15px 10px 25px;}
+.ErrorBox p {text-align:center;margin:15px auto 20px;}
+.ResultBox {margin:10px;padding:15px 10px 25px;}
+.ResultBox p {text-align:center;margin:15px auto 20px;}
+
+.finalTime {
+    max-width:300px;
+    border:1px solid #333;border-radius:10px;
+    text-align:center;
+    font-size:24px !important;font-weight:bold;
+    padding:20px;margin:0 auto !important;
+}
+
+/** media queries **/
+@media screen and (max-width:760px) {
+    .inputwrapper_2, .inputwrapper_3 {width:95% !important;}
+    .wrapper .slds-grid>div {padding:5px;margin:5px 5px 10px;}
+    .finalTime {padding:5px;}
+}

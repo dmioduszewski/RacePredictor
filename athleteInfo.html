@@ -1,0 +1,47 @@
+<template>
+    <div class="wrapper slds-card slds-p-around_medium">
+        <div id="AthleteData">
+            <div class="slds-grid slds-wrap slds-gutters">
+                <div class="inputwrapper_2"><lightning-input required name="Athlete Name" label="Your Name" value={athleteName} type="text" onchange={handleNameChange} message-when-value-missing="Enter a valid name"></lightning-input></div>
+                <div class="inputwrapper_2"><lightning-input name="Athlete Age" label="Your Age" value={athleteAge} type="number" onchange={handleAgeChange}></lightning-input></div>
+                
+                <div class="inputwrapper_2"><lightning-combobox required name="Race Distance" label="Race Distance" value={raceType} onchange={handleRaceChange} options={raceTypeOptions}></lightning-combobox></div>
+                <div class="inputwrapper_2"><lightning-combobox required name="Experience Level" label="Experience Level" value={experienceLevel} onchange={handleXPChange} options={experienceLevelOptions}></lightning-combobox></div>
+            
+                <div class="inputwrapper_3"><lightning-input required name="Swim Pace" label="Swim Pace" value={swimPace} type="text" onchange={handleSwimChange} placeholder="MM:SS" field-level-help="Enter a swim pace per 100m in MM:SS format" message-when-value-missing="Enter a valid swim pace"></lightning-input></div>
+                <div class="inputwrapper_3"><lightning-input required name="Bike Pace" label="Bike Speed" value={bikePace} type="number" onchange={handleBikeChange} placeholder="MPH" field-level-help="Enter a bike speed in MPH" message-when-value-missing="Enter a valid bike speed"></lightning-input></div>
+                <div class="inputwrapper_3"><lightning-input required name="Run Pace" label="Run Pace" value={runPace} type="text" onchange={handleRunChange} placeholder="MM:SS by min/mile" field-level-help="Enter a run pace per mile in MM:SS format" message-when-value-missing="Enter a valid run pace"></lightning-input></div>
+            </div>
+            <div class="slds-size_1-of-1 slds-align_absolute-center" style="height:60px;margin:10px 0;">
+                <lightning-button 
+                variant="brand"
+                label="Calculate Race Time" title="Calculate Race Time"
+                onclick={handleClick} 
+                ></lightning-button>
+            </div>
+        </div>
+        <template lwc:if={errors}>
+            <div class="slds-text-color_error" id="AthleteErrors">
+                <div class="ErrorBox"><hr />
+                    <p class="slds-text-heading_medium">Unfortunately some errors occured. See below and try again.</p>
+                    <div class="slds-text-heading_small" id="errorList">
+                        {errorMessage}
+                    </div>
+                </div>
+            </div>
+        </template>
+        <template lwc:if={result}>
+            <div class="slds-text-color_success" id="AthleteResult">
+                <div class="ResultBox">
+                    <hr />
+                    <p class="slds-text-heading_medium">Your predicted finish time:</p>
+                    <div class="slds-text-heading_small finalTime" id="RaceTime">
+                        {totalTime}
+                    </div>
+                    <p>&nbsp;</p>
+                    <div style="text-align:center;"><lightning-button label="Do Another Calculation" title="Do Another Calculation" onclick={handleClearClick}></lightning-button></div>
+                </div>
+            </div>
+        </template>
+    </div>
+</template>
