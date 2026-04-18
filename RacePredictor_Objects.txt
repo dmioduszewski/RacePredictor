@@ -1,0 +1,39 @@
+#################
+##   Objects   ##
+#################
+
+
+Athlete__c
+-----------
+Fields & Relationships
+Age	                Age__c              	Number(3, 0)
+Athlete Name    	Name	                Text(80)
+Bike Speed	        Bike_Speed__c	        Number(3, 0)
+Experience Level	Experience_Level__c	    Picklist
+Owner	    	        OwnerId     	        Lookup(User,Group)
+Run Pace  	  	    Run_Pace__c             Text(100)
+Swim Pace	        Swim_Pace__c	        Text(100)
+
+
+
+Race_Prediction__c
+-------------------
+Fields & Relationships
+Athlete             	Athlete__c              	Lookup(Athlete)
+Predicted Bike Time 	Predicted_Bike_Time__c  	Number(8, 2)
+Predicted Run Time  	Predicted_Run_Time__c   	Number(8, 2)
+Predicted Swim Time 	Predicted_Swim_Time__c  	Number(8, 2)
+Race                	Race__c                 	Lookup(Race)
+Race Prediction Name   	Name                    	Text(80)
+Total Race Time     	Total_Race_Time__c      	Text(10)
+Transition Time     	Transition_Time__c      	Number(6, 0)
+
+
+Race__c
+-------
+Fields & Relationships
+Bike Distance	Bike_Distance__c	Number(18, 0)
+Race Distance	Race_Distance__c	Picklist
+Race Name	Name			Text(80)
+Run Distance	Run_Distance__c		Number(18, 0)
+Swim Distance	Swim_Distance__c	Number(18, 0)

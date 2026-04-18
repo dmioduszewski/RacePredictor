@@ -1,0 +1,625 @@
+######################
+##   Apex Classes   ##
+######################
+
+---------------------
+RaceCalculator.apxc -
+---------------------
+public class RaceCalculator {
+    @AuraEnabled public static String CalculateRace(String AthleteName, Integer AthleteAge, String swimPace, Integer bikeSpeed, String runPace, String xpLevel, String raceDist) {
+        String validateErrors = '';
+        List<String> listCheck = new List<String>();
+        //send inputted paces to validate
+        listCheck = validateInputs(swimPace, bikeSpeed, runPace);
+        Race__c raceInfo = [SELECT Swim_Distance__c, Bike_Distance__C, Run_Distance__c
+                           FROM Race__c
+                           WHERE Race_Distance__c = :raceDist
+                           LIMIT 1];
+        //if error string is populated, throw error and end, else continue
+        if (!listCheck.isEmpty()) {
+            throw new AuraHandledException(String.join(listCheck, ' | '));
+        } else {
+	    	String TotalRaceTime = '';
+            //continue on checks
+            Decimal TransTime = TransitionCalc(xpLevel, raceDist);
+            Decimal TotalSwim = SwimCalc(swimPace, raceInfo.Swim_Distance__c);
+            Decimal TotalBike = BikeCalc(bikeSpeed, raceInfo.Bike_Distance__c);
+            Decimal TotalRun = RunCalc(runPace, raceInfo.Run_Distance__c);
+            
+            //add up the individual legs and transition
+            Decimal TotalRaceSec = AddLegs(TransTime, TotalSwim, TotalBike, TotalRun);
+            //convert the total seconds to HH:MM:SS
+            TotalRaceTime = Seconds2Time(TotalRaceSec);
+            
+            //create the athlete object save for DML
+            System.debug('About to enter the new Athlete');
+            Athlete__c newAthlete = new Athlete__c();
+            newAthlete.Name = AthleteName;
+            newAthlete.Age__c = AthleteAge;
+            newAthlete.Swim_Pace__c = swimPace;
+            newAthlete.Bike_Speed__c = bikeSpeed;
+            newAthlete.Run_Pace__c = runPace;
+            newAthlete.Experience_Level__c = xpLevel;
+            insert newAthlete;
+            System.debug('Athlete inserted: ' + newAthlete.Id);
+            //insert the race prediction for DML
+            Race_Prediction__C newPrediction = new Race_Prediction__C();
+            newPrediction.Athlete__c = newAthlete.Id;
+            newPrediction.Name = AthleteName + ' - ' + raceDist + ' - ' + TotalRaceTime;
+            newPrediction.Predicted_Swim_Time__c = TotalSwim;
+            newPrediction.Predicted_Bike_Time__c = TotalBike;
+            newPrediction.Predicted_Run_Time__c = TotalRun;
+            newPrediction.Transition_Time__c = TransTime;
+            newPrediction.Total_Race_Time__c = TotalRaceTime;
+            insert newPrediction;
+            //return to the predicted time to the lwc
+            return TotalRaceTime;
+        }
+        
+    }
+    
+    
+    //method to validate paces
+    public static List<String> validateInputs(String swimCheck, Integer bikeCheck, String runCheck) {
+        List<String> errorList = new List<String>();
+        errorList.clear();
+        String colon = ':';
+        Integer result = 0;
+        
+        //bike checks
+        if (bikeCheck == 0) {
+            errorList.add('Bike speed cannot be zero');
+        } else if (bikeCheck >= 40) {
+            errorList.add('Too fast - Bike cannot be a car');
+        }
+        //swim checks
+        result = swimCheck.IndexOf(colon);
+        if (result < 0 ) {
+            errorList.add('Incorrectly formatted swim pace');
+        } else if (swimCheck.length() > 4) {
+            errorList.add('Swim pace format too long');
+        } else {
+            //break swim into minutes and seconds
+            Integer SwimMin = Integer.valueOf(swimCheck.subStringBefore(colon));
+            Integer SwimSec = Integer.valueOf(swimCheck.subStringAfter(colon));
+            //check values of mins and secs
+            if (SwimSec > 59) {
+                errorList.add('Incorrectly entered swim time [seconds]');
+            }
+            if (SwimMin > 4 || SwimMin < 1) {
+                errorList.add('Incorrectly entered swim time [minutes]');
+            }
+            if (SwimMin == 0 && SwimSec == 0) {
+                errorList.add('Swim pace cannot be zero');
+            }
+        }
+        
+        //run checks
+        result = runCheck.IndexOf(colon);
+        if (result < 0 ) {
+            errorList.add('Incorrectly formatted run pace');
+        } else if (runCheck.length() > 5) {
+            errorList.add('Run pace format too long');
+        } else {
+            //break run into minutes and seconds
+            Integer RunMin = Integer.valueOf(runCheck.subStringBefore(colon));
+            Integer RunSec = Integer.valueOf(runCheck.subStringAfter(colon));
+            //check values of mins and secs
+            if (RunSec > 59) {
+                errorList.add('Incorrectly entered run time [seconds]');
+            }
+            if (RunMin == 0 && RunSec == 0) {
+                errorList.add('Run pace cannot be zero');
+            }
+            if (RunMin < 3) {
+                errorList.add('Incorrectly entered run pace [minutes]');
+            }
+        }
+        
+        return errorList;
+    }
+    
+    
+    //method to experience level multiplier
+    public static Decimal TransitionCalc(String xpLevel, String raceDist) {
+        Integer xpMulti = 0;
+        Integer TransMins = 0;
+        switch on xpLevel{
+            when 'Pro' {
+                xpMulti = 1;
+            }
+            when 'Competitive' {
+                xpMulti = 2;
+            }
+            when 'Experienced' {
+                xpMulti = 4;
+            }
+            when else {
+                xpMulti = 6;
+            }
+        }
+        switch on raceDist {
+            //for full iron tri
+            when 'Full_Ironman' {
+                TransMins = 4 * xpMulti;
+            }
+            //for half iron tri
+            when 'Half_Ironman' {
+                TransMins = 3 * xpMulti;
+            }
+            //for olympic dist tri
+            when 'Olympic' {
+                TransMins = 2 * xpMulti;
+            }
+            //for general sprint tri
+            when else {
+                TransMins = 1 * xpMulti;
+            }
+        }
+		Decimal TransSec = TransMins * 60;
+        return TransSec;
+    }
+
+    
+    //method to calculate the swim leg
+    public static Decimal SwimCalc(String swimPace, Decimal raceDist) {
+        String colon = ':';
+        Integer SwimMin = Integer.valueOf(swimPace.subStringBefore(colon));
+        Integer SwimSec = Integer.valueOf(swimPace.subStringAfter(colon));
+        //calculate the swim pace in seconds
+        Integer swimTimeSec = (SwimMin * 60) + SwimSec;
+        Decimal swimTime = (raceDist / 100) * swimTimeSec;
+        //send the time back
+        return swimTime;
+    }
+    //method to calculate the bike leg
+    public static Decimal BikeCalc(Integer bikeSpeed, Decimal raceDist) {
+        Decimal BikeTime = (raceDist / bikeSpeed) * 3600;
+        return BikeTime;
+    }
+    //method to calculate the run leg
+    public static Decimal RunCalc(String runPace, Decimal raceDist) {
+		String colon = ':';
+		Integer RunMin = Integer.valueOf(runPace.subStringBefore(colon));
+        Integer RunSec = Integer.valueOf(runPace.subStringAfter(colon));
+        //calculate the run pace in seconds
+        Integer runTimeSec = (RunMin * 60) + RunSec;
+        Decimal runTime = raceDist * runTimeSec;
+        //send the time back
+        return runTime;
+    }
+    
+    //method to add all of the times
+    public static Decimal AddLegs(Decimal Transitions, Decimal TotalSwim, Decimal TotalBike, Decimal TotalRun) {
+		Decimal TotalRaceSec = Transitions + TotalSwim + TotalBike + TotalRun;
+		return TotalRaceSec;
+    }
+    
+
+    //method to convert total race seconds to string time
+    private static String Seconds2Time(Decimal RaceInterval) {
+        //turn total seconds of predicted race time into string of hh:mm:ss
+        Integer TotalSeconds = Integer.valueOf(RaceInterval);
+		Integer RaceHours = 0;
+		Integer RaceMinutes = 0;
+		Integer RaceSeconds = 0;
+        RaceHours = TotalSeconds / 3600;
+		RaceMinutes = (TotalSeconds - RaceHours * 3600) / 60;
+		RaceSeconds = TotalSeconds - (RaceHours * 3600) - (RaceMinutes * 60);
+		String formattedMins = RaceMinutes < 10 ? '0' + RaceMinutes : String.valueOf(RaceMinutes);
+		String formattedSecs = RaceSeconds < 10 ? '0' + RaceSeconds : String.valueOf(RaceSeconds);
+        String TotalRaceTime = String.valueOf(RaceHours) + ':' + formattedMins + ':' + formattedSecs;
+        return TotalRaceTime;
+    }
+}
+
+
+
+-------------------------
+RaceCalculatorTest.apxc -
+-------------------------
+
+@isTest
+public class RaceCalculatorTest {
+    @testSetup
+    static void setupTestData() {
+        //shared test data
+        Race__c sprintRace = new Race__c();
+        sprintRace.Name = 'Sprint Triathlon';
+        sprintRace.Race_Distance__c = 'Sprint';
+        sprintRace.Swim_Distance__c = 400;
+        sprintRace.Bike_Distance__c = 12;
+        sprintRace.Run_Distance__c = 3.1;
+        insert sprintRace;
+        
+        Race__c olyRace = new Race__c();
+        olyRace.Name = 'Olympic Triathlon';
+        olyRace.Race_Distance__c = 'Olympic';
+        olyRace.Swim_Distance__c = 1500;
+        olyRace.Bike_Distance__c = 28;
+        olyRace.Run_Distance__c = 6.2;
+        insert olyRace;
+        
+        Race__c halfRace = new Race__c();
+        halfRace.Name = 'Half Iron Triathlon';
+        halfRace.Race_Distance__c = 'Half_Ironman';
+        halfRace.Swim_Distance__c = 1930;
+        halfRace.Bike_Distance__c = 56;
+        halfRace.Run_Distance__c = 13.1;
+        insert halfRace;
+        
+        Race__c fullRace = new Race__c();
+        fullRace.Name = 'Full Iron Triathlon';
+        fullRace.Race_Distance__c = 'Full_Ironman';
+        fullRace.Swim_Distance__c = 3860;
+        fullRace.Bike_Distance__c = 112;
+        fullRace.Run_Distance__c = 26.2;
+        insert fullRace;
+    }
+    
+    //test for beginner and sprint, all good
+    @isTest
+    static void testBeginSprintAllGood() {
+        // generate test data
+        String testAthleteName = 'TestAthlete';
+        Integer testAthleteAge = 40;
+        String testSwim = '2:00';
+        Integer testBike = 10;
+        String testRun = '12:00';
+        String testXP = 'Novice';
+        String testRace = 'Sprint';
+        Test.startTest();
+        // call CalculateRace with valid sprint inputs
+        String result = RaceCalculator.CalculateRace(testAthleteName, testAthleteAge, testSwim, testBike, testRun, testXP, testRace);
+        // store the result
+        Test.stopTest();
+        // assert the result is not null
+        System.assertNotEquals(null, result, 'Result should not be null');
+        // assert an Athlete record was created
+        List<Athlete__c> athletes = [SELECT Id FROM Athlete__c WHERE Name = 'TestAthlete'];
+		System.assertEquals(1, athletes.size(), 'One athlete record should be created');
+        // assert a Race Prediction record was created
+        List<Race_Prediction__c> predictions = [SELECT Id FROM Race_Prediction__c WHERE Athlete__c = :athletes[0].Id];
+        System.assertEquals(1, predictions.size(), 'One race prediction should be created');
+    }
+    //test for experienced and Olympic, all good
+    @isTest
+    static void testExpOlyAllGood() {
+        // generate test data
+        String testAthleteName = 'TestAthlete2';
+        Integer testAthleteAge = 40;
+        String testSwim = '1:40';
+        Integer testBike = 15;
+        String testRun = '10:00';
+        String testXP = 'Experienced';
+        String testRace = 'Olympic';
+        Test.startTest();
+        // call CalculateRace with valid sprint inputs
+        String result = RaceCalculator.CalculateRace(testAthleteName, testAthleteAge, testSwim, testBike, testRun, testXP, testRace);
+        // store the result
+        Test.stopTest();
+        // assert the result is not null
+        System.assertNotEquals(null, result, 'Result should not be null');
+        // assert an Athlete record was created
+        List<Athlete__c> athletes = [SELECT Id FROM Athlete__c WHERE Name = 'TestAthlete2'];
+		System.assertEquals(1, athletes.size(), 'One athlete record should be created');
+        // assert a Race Prediction record was created
+        List<Race_Prediction__c> predictions = [SELECT Id FROM Race_Prediction__c WHERE Athlete__c = :athletes[0].Id];
+        System.assertEquals(1, predictions.size(), 'One race prediction should be created');
+    }
+    //test for competitive and half iron, all good
+    @isTest
+    static void testCompHalfAllGood() {
+        // generate test data
+        String testAthleteName = 'TestAthlete3';
+        Integer testAthleteAge = 40;
+        String testSwim = '1:40';
+        Integer testBike = 15;
+        String testRun = '10:00';
+        String testXP = 'Competitive';
+        String testRace = 'Half_Ironman';
+        Test.startTest();
+        // call CalculateRace with valid sprint inputs
+        String result = RaceCalculator.CalculateRace(testAthleteName, testAthleteAge, testSwim, testBike, testRun, testXP, testRace);
+        // store the result
+        Test.stopTest();
+        // assert the result is not null
+        System.assertNotEquals(null, result, 'Result should not be null');
+        // assert an Athlete record was created
+        List<Athlete__c> athletes = [SELECT Id FROM Athlete__c WHERE Name = 'TestAthlete3'];
+		System.assertEquals(1, athletes.size(), 'One athlete record should be created');
+        // assert a Race Prediction record was created
+        List<Race_Prediction__c> predictions = [SELECT Id FROM Race_Prediction__c WHERE Athlete__c = :athletes[0].Id];
+        System.assertEquals(1, predictions.size(), 'One race prediction should be created');
+    }
+    //test for pro and full iron, all good
+    @isTest
+    static void testProFullAllGood() {
+        // generate test data
+        String testAthleteName = 'TestAthlete4';
+        Integer testAthleteAge = 40;
+        String testSwim = '1:20';
+        Integer testBike = 15;
+        String testRun = '8:00';
+        String testXP = 'Pro';
+        String testRace = 'Full_Ironman';
+        Test.startTest();
+        // call CalculateRace with valid sprint inputs
+        String result = RaceCalculator.CalculateRace(testAthleteName, testAthleteAge, testSwim, testBike, testRun, testXP, testRace);
+        // store the result
+        Test.stopTest();
+        // assert the result is not null
+        System.assertNotEquals(null, result, 'Result should not be null');
+        // assert an Athlete record was created
+        List<Athlete__c> athletes = [SELECT Id FROM Athlete__c WHERE Name = 'TestAthlete4'];
+		System.assertEquals(1, athletes.size(), 'One athlete record should be created');
+        // assert a Race Prediction record was created
+        List<Race_Prediction__c> predictions = [SELECT Id FROM Race_Prediction__c WHERE Athlete__c = :athletes[0].Id];
+        System.assertEquals(1, predictions.size(), 'One race prediction should be created');
+    }
+    
+    //test to check for swim without :
+    @isTest
+    static void testBadSwim() {
+        // generate test data
+        String testAthleteName = 'TestAthlete';
+        Integer testAthleteAge = 40;
+        String testSwim = '200';
+        Integer testBike = 10;
+        String testRun = '12:00';
+        String testXP = 'Novice';
+        String testRace = 'Sprint';
+        Test.startTest();
+        // call CalculateRace with sprint inputs
+        try {
+            String result = RaceCalculator.CalculateRace(testAthleteName, testAthleteAge, testSwim, testBike, testRun, testXP, testRace);
+            System.assert(false, 'Exception should be thrown');
+        } catch(AuraHandledException e) {
+            System.assertNotEquals(null, e.getMessage(), 'Exception message should not be null');
+        }
+        // store the result
+        Test.stopTest();
+    }
+    //test to check for run without :
+    @isTest
+    static void testBadRun() {
+        // generate test data
+        String testAthleteName = 'TestAthlete';
+        Integer testAthleteAge = 40;
+        String testSwim = '2:00';
+        Integer testBike = 10;
+        String testRun = '1200';
+        String testXP = 'Novice';
+        String testRace = 'Sprint';
+        Test.startTest();
+        // call CalculateRace with sprint inputs
+        try {
+            String result = RaceCalculator.CalculateRace(testAthleteName, testAthleteAge, testSwim, testBike, testRun, testXP, testRace);
+            System.assert(false, 'Exception should be thrown');
+        } catch(AuraHandledException e) {
+            System.assertNotEquals(null, e.getMessage(), 'Exception message should not be null');
+        }
+        // store the result
+        Test.stopTest();
+    }
+    //test to check for swim with 0 for min
+    @isTest
+    static void testTooFastSwim() {
+        // generate test data
+        String testAthleteName = 'TestAthlete';
+        Integer testAthleteAge = 40;
+        String testSwim = '0:30';
+        Integer testBike = 10;
+        String testRun = '2:00';
+        String testXP = 'Novice';
+        String testRace = 'Sprint';
+        Test.startTest();
+        // call CalculateRace with sprint inputs
+        try {
+            String result = RaceCalculator.CalculateRace(testAthleteName, testAthleteAge, testSwim, testBike, testRun, testXP, testRace);
+            System.assert(false, 'Exception should be thrown');
+        } catch(AuraHandledException e) {
+            System.assertNotEquals(null, e.getMessage(), 'Exception message should not be null');
+        }
+        // store the result
+        Test.stopTest();
+    }
+    //test to check for run too fast
+    @isTest
+    static void testTooFastRun() {
+        // generate test data
+        String testAthleteName = 'TestAthlete';
+        Integer testAthleteAge = 40;
+        String testSwim = '2:00';
+        Integer testBike = 10;
+        String testRun = '2:00';
+        String testXP = 'Novice';
+        String testRace = 'Sprint';
+        Test.startTest();
+        // call CalculateRace with sprint inputs
+        try {
+            String result = RaceCalculator.CalculateRace(testAthleteName, testAthleteAge, testSwim, testBike, testRun, testXP, testRace);
+            System.assert(false, 'Exception should be thrown');
+        } catch(AuraHandledException e) {
+            System.assertNotEquals(null, e.getMessage(), 'Exception message should not be null');
+        }
+        // store the result
+        Test.stopTest();
+    }
+    //test to check for run with all zeros
+    @isTest
+    static void testRunAllZero() {
+        // generate test data
+        String testAthleteName = 'TestAthlete';
+        Integer testAthleteAge = 40;
+        String testSwim = '2:00';
+        Integer testBike = 10;
+        String testRun = '0:00';
+        String testXP = 'Novice';
+        String testRace = 'Sprint';
+        Test.startTest();
+        // call CalculateRace with sprint inputs
+        try {
+            String result = RaceCalculator.CalculateRace(testAthleteName, testAthleteAge, testSwim, testBike, testRun, testXP, testRace);
+            System.assert(false, 'Exception should be thrown');
+        } catch(AuraHandledException e) {
+            System.assertNotEquals(null, e.getMessage(), 'Exception message should not be null');
+        }
+        // store the result
+        Test.stopTest();
+    }
+    //test to check for swim with all zeros
+    @isTest
+    static void testSwimAllZero() {
+        // generate test data
+        String testAthleteName = 'TestAthlete';
+        Integer testAthleteAge = 40;
+        String testSwim = '0:00';
+        Integer testBike = 10;
+        String testRun = '8:00';
+        String testXP = 'Novice';
+        String testRace = 'Sprint';
+        Test.startTest();
+        // call CalculateRace with sprint inputs
+        try {
+            String result = RaceCalculator.CalculateRace(testAthleteName, testAthleteAge, testSwim, testBike, testRun, testXP, testRace);
+            System.assert(false, 'Exception should be thrown');
+        } catch(AuraHandledException e) {
+            System.assertNotEquals(null, e.getMessage(), 'Exception message should not be null');
+        }
+        // store the result
+        Test.stopTest();
+    }
+    //test to check for swim with bad seconds
+    @isTest
+    static void testSwimBadSec() {
+        // generate test data
+        String testAthleteName = 'TestAthlete';
+        Integer testAthleteAge = 40;
+        String testSwim = '1:72';
+        Integer testBike = 10;
+        String testRun = '8:00';
+        String testXP = 'Novice';
+        String testRace = 'Sprint';
+        Test.startTest();
+        // call CalculateRace with sprint inputs
+        try {
+            String result = RaceCalculator.CalculateRace(testAthleteName, testAthleteAge, testSwim, testBike, testRun, testXP, testRace);
+            System.assert(false, 'Exception should be thrown');
+        } catch(AuraHandledException e) {
+            System.assertNotEquals(null, e.getMessage(), 'Exception message should not be null');
+        }
+        // store the result
+        Test.stopTest();
+    }
+    //test to check for run with bad seconds
+    @isTest
+    static void testRunBadSec() {
+        // generate test data
+        String testAthleteName = 'TestAthlete';
+        Integer testAthleteAge = 40;
+        String testSwim = '2:22';
+        Integer testBike = 10;
+        String testRun = '8:72';
+        String testXP = 'Novice';
+        String testRace = 'Sprint';
+        Test.startTest();
+        // call CalculateRace with sprint inputs
+        try {
+            String result = RaceCalculator.CalculateRace(testAthleteName, testAthleteAge, testSwim, testBike, testRun, testXP, testRace);
+            System.assert(false, 'Exception should be thrown');
+        } catch(AuraHandledException e) {
+            System.assertNotEquals(null, e.getMessage(), 'Exception message should not be null');
+        }
+        // store the result
+        Test.stopTest();
+    }
+    //test to check for bike with zero
+    @isTest
+    static void testBikeZero() {
+        // generate test data
+        String testAthleteName = 'TestAthlete';
+        Integer testAthleteAge = 40;
+        String testSwim = '2:00';
+        Integer testBike = 0;
+        String testRun = '8:00';
+        String testXP = 'Novice';
+        String testRace = 'Sprint';
+        Test.startTest();
+        // call CalculateRace with sprint inputs
+        try {
+            String result = RaceCalculator.CalculateRace(testAthleteName, testAthleteAge, testSwim, testBike, testRun, testXP, testRace);
+            System.assert(false, 'Exception should be thrown');
+        } catch(AuraHandledException e) {
+            System.assertNotEquals(null, e.getMessage(), 'Exception message should not be null');
+        }
+        // store the result
+        Test.stopTest();
+    }
+    //test to check for bike too fast
+    @isTest
+    static void testBikeTooFast() {
+        // generate test data
+        String testAthleteName = 'TestAthlete';
+        Integer testAthleteAge = 40;
+        String testSwim = '2:00';
+        Integer testBike = 50;
+        String testRun = '8:00';
+        String testXP = 'Novice';
+        String testRace = 'Sprint';
+        Test.startTest();
+        // call CalculateRace with sprint inputs
+        try {
+            String result = RaceCalculator.CalculateRace(testAthleteName, testAthleteAge, testSwim, testBike, testRun, testXP, testRace);
+            System.assert(false, 'Exception should be thrown');
+        } catch(AuraHandledException e) {
+            System.assertNotEquals(null, e.getMessage(), 'Exception message should not be null');
+        }
+        // store the result
+        Test.stopTest();
+    }
+    //test to check for swim bad input
+    @isTest
+    static void testSwimBadInput() {
+        // generate test data
+        String testAthleteName = 'TestAthlete';
+        Integer testAthleteAge = 40;
+        String testSwim = '200:00';
+        Integer testBike = 10;
+        String testRun = '8:00';
+        String testXP = 'Novice';
+        String testRace = 'Sprint';
+        Test.startTest();
+        // call CalculateRace with sprint inputs
+        try {
+            String result = RaceCalculator.CalculateRace(testAthleteName, testAthleteAge, testSwim, testBike, testRun, testXP, testRace);
+            System.assert(false, 'Exception should be thrown');
+        } catch(AuraHandledException e) {
+            System.assertNotEquals(null, e.getMessage(), 'Exception message should not be null');
+        }
+        // store the result
+        Test.stopTest();
+    }
+    //test to check for run bad input
+    @isTest
+    static void testRunBadInput() {
+        // generate test data
+        String testAthleteName = 'TestAthlete';
+        Integer testAthleteAge = 40;
+        String testSwim = '2:00';
+        Integer testBike = 10;
+        String testRun = '800:00';
+        String testXP = 'Novice';
+        String testRace = 'Sprint';
+        Test.startTest();
+        // call CalculateRace with sprint inputs
+        try {
+            String result = RaceCalculator.CalculateRace(testAthleteName, testAthleteAge, testSwim, testBike, testRun, testXP, testRace);
+            System.assert(false, 'Exception should be thrown');
+        } catch(AuraHandledException e) {
+            System.assertNotEquals(null, e.getMessage(), 'Exception message should not be null');
+        }
+        // store the result
+        Test.stopTest();
+    }
+}
