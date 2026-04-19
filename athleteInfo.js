@@ -10,10 +10,10 @@ export default class AthleteInfo extends LightningElement {
     //options for dropdown menus
     get raceTypeOptions() {
         return [
-            { label: 'Sprint', value: 'sprint' },
-            { label: 'Olympic', value: 'oly' },
-            { label: 'Half Iron', value: 'half' },
-            { label: 'Full Ironman', value: 'full' }
+            { label: 'Sprint', value: 'Sprint' },
+            { label: 'Olympic', value: 'Olympic' },
+            { label: 'Half Ironman', value: 'Half_Ironman' },
+            { label: 'Full Ironman', value: 'Full_Ironman' }
         ];
     }
     get experienceLevelOptions() {
